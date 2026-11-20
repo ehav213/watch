@@ -1,0 +1,54 @@
+name: Galaxy Watch 4 - test APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/galaxy-watch4-test-apk.yml"
+      - "patcher-app/**"
+      - "watch-mod/**"
+      - "shm-bridge/**"
+      - "catalogue/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    name: Test build (no developer signing secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-36 platforms;android-37.0 build-tools;36.0.0 build-tools;37.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile and test
+        run: |
+          patcher-app/gradlew --no-daemon :engine:test :app:testDebugUnitTest :app:assembleDebug
+      - name: Build without accessibility guide
+        run: |
+          patcher-app/gradlew --no-daemon -PnoGuide :app:assembleDebug
+          mkdir -p "$RUNNER_TEMP/watch4"
+          cp patcher-app/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/watch4/Watch4-LibreWrist-noguide-TEST.apk"
+      - name: Verify APK and checksum
+        run: |
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs "$RUNNER_TEMP/watch4/Watch4-LibreWrist-noguide-TEST.apk"
+          "$ANDROID_HOME/build-tools/37.0.0/aapt2" dump packagename "$RUNNER_TEMP/watch4/Watch4-LibreWrist-noguide-TEST.apk"
+          cd "$RUNNER_TEMP/watch4"
+          sha256sum *.apk > SHA256SUMS
+      - name: Publish test artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Watch4-LibreWrist-noguide-TEST
+          path: |
+            ${{ runner.temp }}/watch4/*.apk
+            ${{ runner.temp }}/watch4/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
